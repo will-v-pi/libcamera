@@ -1,10 +1,25 @@
 # SPDX-License-Identifier: CC0-1.0
 
-py3_dep = dependency('python3', required : get_option('pycamera'))
+if meson.is_cross_build()
+    py3_dep = dependency('python3', required : get_option('pycamera'))
 
-if not py3_dep.found()
-    pycamera_enabled = false
-    subdir_done()
+    if not py3_dep.found()
+        pycamera_enabled = false
+        subdir_done()
+    endif
+else
+    py = import('python').find_installation('python3', required : get_option('pycamera'))
+
+    if not py.found()
+        pycamera_enabled = false
+        subdir_done()
+    else
+        py3_dep = py.dependency(required : get_option('pycamera'))
+        if not py3_dep.found()
+            pycamera_enabled = false
+            subdir_done()
+        endif
+    endif
 endif
 
 pybind11_dep = dependency('pybind11', required : get_option('pycamera'))
@@ -78,15 +93,24 @@ pycamera_args = [
     '-DPYBIND11_USE_SMART_HOLDER_AS_DEFAULT',
 ]
 
-destdir = get_option('libdir') / ('python' + py3_dep.version()) / 'site-packages' / 'libcamera'
+if meson.is_cross_build()
+    destdir = get_option('libdir') / ('python' + py3_dep.version()) / 'site-packages' / 'libcamera'
 
-pycamera = shared_module('_libcamera',
-                         pycamera_sources,
-                         install : true,
-                         install_dir : destdir,
-                         name_prefix : '',
-                         dependencies : pycamera_deps,
-                         cpp_args : pycamera_args)
+    pycamera = shared_module('_libcamera',
+                             pycamera_sources,
+                             install : true,
+                             install_dir : destdir,
+                             name_prefix : '',
+                             dependencies : pycamera_deps,
+                             cpp_args : pycamera_args)
+else
+    pycamera = py.extension_module('_libcamera',
+                                   pycamera_sources,
+                                   install : true,
+                                   subdir : 'libcamera',
+                                   dependencies : pycamera_deps,
+                                   cpp_args : pycamera_args)
+endif
 
 # Create symlinks from the build dir to the source dir so that we can use the
 # Python module directly from the build dir.
@@ -99,7 +123,13 @@ run_command('ln', '-fsrT', meson.current_source_dir() / 'utils',
             meson.current_build_dir() / 'utils',
             check : true)
 
-install_data(['__init__.py'], install_dir : destdir)
+if meson.is_cross_build()
+    install_data(['__init__.py'], install_dir : destdir)
+else
+    py.install_sources(['__init__.py'],
+                       subdir : 'libcamera',
+                       pure : false)
+endif
 
 # \todo Generate stubs when building. See https://peps.python.org/pep-0484/#stub-files
 # Note: Depends on pybind11-stubgen. To generate pylibcamera stubs:
